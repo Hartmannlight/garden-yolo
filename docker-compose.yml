@@ -1,0 +1,19 @@
+services:
+  garden-yolo:
+    image: ghcr.io/hartmannlight/garden-yolo:latest
+
+    environment:
+      DISCORD_WEBHOOK_URL: "find it in server integration in you server setup"
+      CAMERA_CAPTURE_URL: "https://i0.wp.com/boingboing.net/wp-content/uploads/2021/12/martinis.png?fit=2560%2C1440&ssl=1"
+      IMAGE_SAVE_FOLDER: "/opt/webcam/images"
+      YOLO_MODEL_PATH: "yolo11x.pt"
+      CAPTURE_INTERVAL_SECONDS: "20"
+      REQUEST_TIMEOUT: "5"
+      SAVE_INTERVAL_MINUTES: "5"
+      DISCORD_INTERVAL_MINUTES: "20"
+
+    volumes:
+      - ./images:/opt/webcam/images
+      - ./logs:/opt/webcam
+
+    restart: unless-stopped

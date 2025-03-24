@@ -1,0 +1,9 @@
+# IntelliJ/IDEA spezifische Dateien
+.idea/
+*.iml
+
+# Python Cache
+__pycache__/
+*.pyc
+
+*.pt
