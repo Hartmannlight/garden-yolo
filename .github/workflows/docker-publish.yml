@@ -36,5 +36,5 @@ jobs:
           push: true
           platforms: linux/amd64
           tags: |
-            ghcr.io/${{ github.repository_owner }}/garden-yolo:latest
-            ghcr.io/${{ github.repository_owner }}/garden-yolo:${{ github.sha }}
+            ghcr.io/hartmannlight/garden-yolo:latest
+            ghcr.io/hartmannlight/garden-yolo:${{ github.sha }}
