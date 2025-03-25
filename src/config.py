@@ -3,6 +3,7 @@ import os
 KUMA_URL = os.getenv("KUMA_URL")
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 CAMERA_CAPTURE_URL = os.getenv("CAMERA_CAPTURE_URL", "https://images.bergfex.at/webcams/?id=17250&format=4")
+CAMERA_ROTATION = int(os.getenv("CAMERA_ROTATION", "0"))
 
 IMAGE_SAVE_FOLDER = os.getenv("IMAGE_SAVE_FOLDER", r"/opt/webcam/images")
 YOLO_MODEL_PATH = os.getenv("YOLO_MODEL_PATH", "yolo11x.pt")

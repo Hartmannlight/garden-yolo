@@ -9,6 +9,7 @@ from config import (
     KUMA_URL,
     DISCORD_WEBHOOK_URL,
     CAMERA_CAPTURE_URL,
+    CAMERA_ROTATION,
     IMAGE_SAVE_FOLDER,
     YOLO_MODEL_PATH,
     CAPTURE_INTERVAL_SECONDS,
@@ -42,7 +43,7 @@ class CameraMonitor:
 
     def capture_image(self) -> "cv2.Mat or None":
         """
-        Retrieves an image from the camera.
+        Retrieves an image from the camera and optionally rotates it.
 
         Returns:
             OpenCV image matrix if successful, else None.
@@ -52,6 +53,14 @@ class CameraMonitor:
             response.raise_for_status()
             image_array = np.asarray(bytearray(response.content), dtype=np.uint8)
             image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
+
+            if CAMERA_ROTATION == 90:
+                image = cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE)
+            elif CAMERA_ROTATION == 180:
+                image = cv2.rotate(image, cv2.ROTATE_180)
+            elif CAMERA_ROTATION == 270:
+                image = cv2.rotate(image, cv2.ROTATE_90_COUNTERCLOCKWISE)
+
             return image
         except Exception as e:
             logging.error("Error capturing image: %s", e)
