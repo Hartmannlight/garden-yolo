@@ -38,7 +38,6 @@ class CameraMonitor:
 
     def __init__(self):
         self.model = YOLO(YOLO_MODEL_PATH)
-        self.last_save_minute = None
         self.last_discord_send = datetime.datetime.min
 
     def capture_image(self) -> "cv2.Mat or None":
@@ -154,9 +153,8 @@ class CameraMonitor:
             else:
                 status = "up"
                 msg = "OK"
-                if now.minute % SAVE_INTERVAL_MINUTES == 0 and self.last_save_minute != now.minute:
-                    self.save_image(image)
-                    self.last_save_minute = now.minute
+
+                self.save_image(image)
 
                 processed_image, person_found = self.process_image(image)
                 if person_found and (now - self.last_discord_send).total_seconds() >= DISCORD_INTERVAL_MINUTES * 60:
@@ -164,10 +162,7 @@ class CameraMonitor:
                     self.last_discord_send = now
 
             self.push_kuma(status, msg)
-            now = datetime.datetime.now()
-            seconds = now.second + now.microsecond / 1e6
-            sleep_time = CAPTURE_INTERVAL_SECONDS - (seconds % CAPTURE_INTERVAL_SECONDS)
-            time.sleep(sleep_time)
+            time.sleep(CAPTURE_INTERVAL_SECONDS)
 
 
 if __name__ == "__main__":

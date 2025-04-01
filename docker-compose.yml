@@ -11,6 +11,7 @@ services:
       REQUEST_TIMEOUT: "5"
       SAVE_INTERVAL_MINUTES: "5"
       DISCORD_INTERVAL_MINUTES: "20"
+      TZ: Europe/Berlin
 
     volumes:
       - ./images:/opt/webcam/images
