@@ -4,7 +4,6 @@ import logging
 import requests
 import cv2
 import numpy as np
-from ultralytics import YOLO
 from config import (
     KUMA_URL,
     DISCORD_WEBHOOK_URL,
@@ -82,35 +81,6 @@ class CameraMonitor:
         except Exception as e:
             logging.error("Error sending Kuma ping: %s", e)
 
-    def process_image(self, image: "cv2.Mat") -> ("cv2.Mat", bool):
-        """
-        Processes an image with YOLO to detect persons.
-
-        Args:
-            image: The image to process.
-
-        Returns:
-            A tuple of the processed image and a boolean indicating if a person was found.
-        """
-        results = self.model(image)
-        person_found = False
-        font = cv2.FONT_HERSHEY_SIMPLEX
-        font_scale = 0.5
-        thickness = 2
-        color = (10, 100, 255)
-        for result in results:
-            for box in result.boxes:
-                class_id = int(box.cls[0])
-                confidence = float(box.conf[0])
-                if class_id == 0:
-                    x1, y1, x2, y2 = map(int, box.xyxy[0])
-                    cv2.rectangle(image, (x1, y1), (x2, y2), color, thickness)
-                    label = f"Person: {confidence:.2f}"
-                    cv2.putText(image, label, (x1, y1 - 10), font, font_scale, color, thickness)
-                    person_found = True
-                    logging.info("Person detected: bbox=(%d,%d,%d,%d), confidence=%.2f", x1, y1, x2, y2, confidence)
-        return image, person_found
-
     def save_image(self, image: "cv2.Mat"):
         """
         Saves the original image to disk.
@@ -119,26 +89,6 @@ class CameraMonitor:
         filename = f"{IMAGE_SAVE_FOLDER}/{timestamp}.jpg"
         cv2.imwrite(filename, image)
         logging.info("Image saved: %s", filename)
-
-    def send_discord_image(self, image: "cv2.Mat"):
-        """
-        Sends the processed image to Discord via webhook.
-        """
-        if not DISCORD_WEBHOOK_URL:
-            logging.warning("Discord webhook URL not configured; skipping Discord send.")
-            return
-        success, buffer = cv2.imencode(".jpg", image)
-        if not success:
-            logging.error("Error encoding image for Discord.")
-            return
-        files = {"file": ("processed_image.jpg", buffer.tobytes(), "image/jpeg")}
-        data = {"content": "Person detected!"}
-        try:
-            response = requests.post(DISCORD_WEBHOOK_URL, data=data, files=files, timeout=REQUEST_TIMEOUT)
-            response.raise_for_status()
-            logging.info("Image sent to Discord.")
-        except Exception as e:
-            logging.error("Error sending image to Discord: %s", e)
 
     def run(self):
         """
@@ -155,11 +105,6 @@ class CameraMonitor:
                 msg = "OK"
 
                 self.save_image(image)
-
-                processed_image, person_found = self.process_image(image)
-                if person_found and (now - self.last_discord_send).total_seconds() >= DISCORD_INTERVAL_MINUTES * 60:
-                    self.send_discord_image(processed_image)
-                    self.last_discord_send = now
 
             self.push_kuma(status, msg)
             time.sleep(CAPTURE_INTERVAL_SECONDS)
