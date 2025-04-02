@@ -36,7 +36,6 @@ class CameraMonitor:
     """
 
     def __init__(self):
-        self.model = YOLO(YOLO_MODEL_PATH)
         self.last_discord_send = datetime.datetime.min
 
     def capture_image(self) -> "cv2.Mat or None":
