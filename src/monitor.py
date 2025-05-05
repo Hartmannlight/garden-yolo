@@ -1,9 +1,12 @@
+import os
 import time
 import datetime
 import logging
 import requests
 import cv2
 import numpy as np
+from ultralytics import YOLO
+
 from config import (
     KUMA_URL,
     DISCORD_WEBHOOK_URL,
@@ -12,14 +15,26 @@ from config import (
     IMAGE_SAVE_FOLDER,
     YOLO_MODEL_PATH,
     CAPTURE_INTERVAL_SECONDS,
-    SAVE_INTERVAL_MINUTES,
-    DISCORD_INTERVAL_MINUTES,
+    YOLO_PROCESS_EVERY_N,
+    FAILURE_THRESHOLD,
     REQUEST_TIMEOUT,
     LOG_FILE,
 )
 
+# Ensure LOG_FILE is a file path, not a directory
+if os.path.isdir(LOG_FILE):
+    # create the directory if it doesn't exist, then point to monitor.log inside it
+    os.makedirs(LOG_FILE, exist_ok=True)
+    log_path = os.path.join(LOG_FILE, "monitor.log")
+else:
+    # ensure parent directory exists
+    log_dir = os.path.dirname(LOG_FILE)
+    if log_dir:
+        os.makedirs(log_dir, exist_ok=True)
+    log_path = LOG_FILE
+
 logging.basicConfig(
-    filename=LOG_FILE,
+    filename=log_path,
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
 )
@@ -27,29 +42,26 @@ logging.basicConfig(
 
 class CameraMonitor:
     """
-    Monitors an ESP32-CAM, processes images with YOLO, pings Kuma and sends Discord notifications.
-
-    Attributes:
-        model (YOLO): The YOLO model for object detection.
-        last_save_minute (int): The minute value when the last image was saved.
-        last_discord_send (datetime): Timestamp of the last Discord notification.
+    Monitors an ESP32-CAM, saves each capture in daily folders,
+    processes every N-th frame with YOLO, and pings Kuma after failures.
     """
 
     def __init__(self):
-        self.last_discord_send = datetime.datetime.min
+        self.image_counter = 0
+        self.consecutive_failures = 0
+        self.model = YOLO(YOLO_MODEL_PATH)
 
-    def capture_image(self) -> "cv2.Mat or None":
+    def capture_image(self):
         """
-        Retrieves an image from the camera and optionally rotates it.
-
-        Returns:
-            OpenCV image matrix if successful, else None.
+        Fetches an image from the camera and applies rotation if configured.
+        Returns the OpenCV image matrix, or None on error.
         """
         try:
             response = requests.get(CAMERA_CAPTURE_URL, timeout=REQUEST_TIMEOUT)
             response.raise_for_status()
-            image_array = np.asarray(bytearray(response.content), dtype=np.uint8)
-            image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
+
+            img_array = np.frombuffer(response.content, dtype=np.uint8)
+            image = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
 
             if CAMERA_ROTATION == 90:
                 image = cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE)
@@ -60,55 +72,81 @@ class CameraMonitor:
 
             return image
         except Exception as e:
-            logging.error("Error capturing image: %s", e)
+            logging.error("Capture error: %s", e)
             return None
 
-    def push_kuma(self, status: str, msg: str):
+    def save_image(self, image):
         """
-        Pings the Kuma service. Skips if KUMA_URL is not configured.
+        Saves the image in a folder named YYYY-MM-DD under IMAGE_SAVE_FOLDER.
+        """
+        date_str = datetime.datetime.now().strftime("%Y-%m-%d")
+        folder = os.path.join(IMAGE_SAVE_FOLDER, date_str)
+        os.makedirs(folder, exist_ok=True)
 
-        Args:
-            status (str): "up" or "down".
-            msg (str): Status message.
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        filename = os.path.join(folder, f"{timestamp}.jpg")
+        cv2.imwrite(filename, image)
+        logging.info("Saved image: %s", filename)
+
+    def process_yolo(self, image):
+        """
+        Runs the YOLO model on the image.
+        """
+        _ = self.model(image)
+        logging.info("YOLO processed image #%d", self.image_counter)
+
+    def push_kuma(self, status, msg):
+        """
+        Sends a status ping to Kuma if KUMA_URL is set.
         """
         if not KUMA_URL:
             return
         try:
-            url = f"{KUMA_URL.split('?')[0]}?status={status}&msg={msg}"
+            base_url = KUMA_URL.split("?", 1)[0]
+            url = f"{base_url}?status={status}&msg={msg}"
             response = requests.get(url, timeout=REQUEST_TIMEOUT)
             response.raise_for_status()
         except Exception as e:
-            logging.error("Error sending Kuma ping: %s", e)
+            logging.error("Kuma ping error: %s", e)
 
-    def save_image(self, image: "cv2.Mat"):
+    def _handle_failure(self):
         """
-        Saves the original image to disk.
+        Increments failure counter and pushes 'down' if threshold reached.
         """
-        timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        filename = f"{IMAGE_SAVE_FOLDER}/{timestamp}.jpg"
-        cv2.imwrite(filename, image)
-        logging.info("Image saved: %s", filename)
+        self.consecutive_failures += 1
+        if self.consecutive_failures >= FAILURE_THRESHOLD:
+            self.push_kuma("down", f"Failed {self.consecutive_failures} captures")
+            self.consecutive_failures = 0
+
+    def _handle_success(self, image):
+        """
+        Resets failure counter, pushes 'up', saves image, and processes YOLO as configured.
+        """
+        self.consecutive_failures = 0
+        self.push_kuma("up", "OK")
+
+        # Always save each captured image
+        self.save_image(image)
+
+        # Process YOLO every N-th image
+        self.image_counter += 1
+        if self.image_counter % YOLO_PROCESS_EVERY_N == 0:
+            self.process_yolo(image)
 
     def run(self):
         """
-        Main loop of the monitor.
+        Main loop: capture → success/failure handling → sleep.
         """
         while True:
-            now = datetime.datetime.now()
             image = self.capture_image()
+
             if image is None:
-                status = "down"
-                msg = "Image capture failed"
+                self._handle_failure()
             else:
-                status = "up"
-                msg = "OK"
+                self._handle_success(image)
 
-                self.save_image(image)
-
-            self.push_kuma(status, msg)
             time.sleep(CAPTURE_INTERVAL_SECONDS)
 
 
 if __name__ == "__main__":
-    monitor = CameraMonitor()
-    monitor.run()
+    CameraMonitor().run()
